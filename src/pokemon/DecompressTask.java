@@ -5,10 +5,12 @@ import pokemon.gui.Renderer;
 import pokemon.gui.WritableImageWrapper;
 import pokemon.sprite.Sprite;
 import pokemon.util.BitReader;
+import pokemon.util.KSBitReader;
 
 import java.io.EOFException;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -16,31 +18,51 @@ import java.util.List;
 public class DecompressTask implements Runnable {
 	private final File file;
 	private final boolean renderable;
-	private BitReader reader;
+	private KSBitReader reader;
 	private byte widthInTiles;
 	private byte heightInTiles;
+
+	private long bitsRead;
+	private long fileSizeBits;
 
 	public DecompressTask(List<File> files, boolean renderable) {
 		this.file = files.get(0);
 		this.renderable = renderable;
+
+		try {
+			this.fileSizeBits = Files.size(file.toPath()) * 8;
+			this.reader = new KSBitReader(this.file);
+			println("Initialized! File size = %d (%d bits)", Files.size(file.toPath()), fileSizeBits);
+		} catch (IOException e) {
+			throw new IllegalArgumentException("Cannot read size of file at " + file.toPath());
+		}
+		this.bitsRead = 0;
+
 	}
 
 	@Override
 	public void run() {
 		try {
-			this.reader = new BitReader(this.file);
+			println("Initialized input reader with %d bytes (%d bits)", reader.bytes.length, reader.bytes.length * 8);
 
 			int sizeOfSprite = this.getSpriteSize();
-			byte primaryBuffer = this.reader.next();
+			byte primaryBuffer = this.reader.next(); bitsRead++;
 
 			Sprite buffer0SpriteData = new Sprite(this.widthInTiles, this.heightInTiles);
 			Sprite buffer1SpriteData = new Sprite(this.widthInTiles, this.heightInTiles);
 
-			System.out.println(sizeOfSprite);
+			println("Sprite size (bits): %d", sizeOfSprite);
+			println("Primary buffer: %d", primaryBuffer);
+
+			println("Decompressing first buffer");
 			this.readToBuffer(primaryBuffer == 0 ? buffer0SpriteData : buffer1SpriteData);
+
 			byte encodeMethod = getEncodeMethod();
-			System.out.println(encodeMethod);
+			println("Encoding method: %d", encodeMethod);
+
+			println("Decompressing second buffer");
 			this.readToBuffer(primaryBuffer == 1 ? buffer1SpriteData : buffer0SpriteData);
+
 			if (this.renderable) {
 				WritableImageWrapper bufferA = Renderer.Instance().getBuffer(0);
 				WritableImageWrapper bufferB = Renderer.Instance().getBuffer(1);
@@ -87,6 +109,7 @@ public class DecompressTask implements Runnable {
 //			}
 		} catch (IOException e) {
 			e.printStackTrace();
+			throw new IllegalStateException("Crash: " + e.getMessage(), e);
 		}
 	}
 
@@ -99,8 +122,10 @@ public class DecompressTask implements Runnable {
 	}
 
 	private int getSpriteSize() throws IOException {
-		this.widthInTiles = this.reader.next(4);
-		this.heightInTiles = this.reader.next(4);
+		this.widthInTiles = this.reader.next(4); bitsRead += 4;
+		println("Width in tiles = %d", widthInTiles);
+		this.heightInTiles = this.reader.next(4); bitsRead += 4;
+		println("Height in tiles = %d", heightInTiles);
 
 		int spriteWidth = this.widthInTiles * 8;
 		int spriteHeight = this.heightInTiles * 8;
@@ -115,49 +140,75 @@ public class DecompressTask implements Runnable {
 	}
 
 	private void readToBuffer(Sprite sprite) throws IOException {
-		byte initialPacket = this.reader.next();
+		byte initialPacket = this.reader.next(); bitsRead++;
+		println("Initial packet = %s", initialPacket == 0 ? "RLE" : "DATA");
+
 		boolean doingRLE = initialPacket == 0;
 
 		int bitsInSprite = sprite.getAbsoluteWidth() * sprite.getAbsoluteHeight();
 
-		int bitsRead = 0;
+		int rleCount = 0;
+		int dataCount = 0;
+		int bitsReadLocally = 0;
 		int x = 0;
 		int y = 0;
 
-		while (bitsRead <= bitsInSprite) {
-			byte[] bitPairs;
+		try {
+			while (bitsReadLocally < bitsInSprite) {
+				byte[] bitPairs;
 
-			try {
-				bitPairs = doingRLE ? RLE(bitsRead, bitsInSprite) : DATA(bitsRead, bitsInSprite);
-			} catch (EOFException e) {
-				System.out.println(bitsRead);
-				break;
-			}
-
-			for (byte bitPair : bitPairs) {
-				sprite.setAbsolute(x, y, (byte) (bitPair & 1));
-				sprite.setAbsolute(x + 1, y, (byte) ((bitPair >> 1) & 1));
-				bitsRead += 2;
-				y++;
-				if (y > sprite.getAbsoluteHeight()) {
-					y = 0;
-					x += 2;
+				try {
+					if (doingRLE) {
+						rleCount++;
+						bitPairs = RLE(bitsReadLocally, bitsInSprite);
+					} else {
+						dataCount++;
+						bitPairs = DATA(bitsReadLocally, bitsInSprite);
+					}
+					// bitPairs = doingRLE ? RLE(bitsRead, bitsInSprite) : DATA(bitsRead, bitsInSprite);
+				} catch (EOFException e) {
+					System.out.println(bitsReadLocally);
+					break;
 				}
-			}
 
-			doingRLE = !doingRLE;
+				for (byte bitPair : bitPairs) {
+					sprite.setAbsolute(x, y, (byte) (bitPair & 0b10));
+					sprite.setAbsolute(x + 1, y, (byte) (bitPair & 0b01));
+					bitsReadLocally += 2;
+					y++;
+					if (y > sprite.getAbsoluteHeight()) {
+						y = 0;
+						x += 2;
+					}
+				}
+
+				doingRLE = !doingRLE;
+			}
+		} catch (Exception e) {
+			System.out.println();
+			System.out.println("Error while reading sprite data: " + e.getMessage());
+			System.out.printf("Sprite size in tiles: %d by %d (%d total)\n", sprite.getWidth(), sprite.getHeight(), sprite.getWidth() * sprite.getHeight());
+			System.out.printf("- In bits: %d by %d (%d total)\n", sprite.getAbsoluteWidth(), sprite.getAbsoluteHeight(), sprite.getAbsoluteHeight() * sprite.getAbsoluteWidth());
+			System.out.printf("bitsInSprite: %d // bitsRead: %d\n", bitsInSprite, bitsReadLocally);
+			System.out.println("RLE Count: " + rleCount);
+			System.out.println("DATA Count: " + dataCount);
+			System.out.printf("File bits read: %d, File size in bits: %d%n", bitsRead, fileSizeBits);
+			throw e;
 		}
+
 		System.out.println();
-		System.out.println(bitsRead);
-		System.out.println(bitsInSprite);
-		System.out.println(sprite);
+		System.out.println("bits read: " + bitsReadLocally);
+		System.out.println("bits in sprite: " + bitsInSprite);
+		// System.out.println(sprite);
+		System.out.println("RLE Count: " + rleCount);
+		System.out.println("DATA Count: " + dataCount);
 	}
 
 	private byte getEncodeMethod() throws IOException {
-		byte encode = this.reader.next();
+		byte encode = this.reader.next(); bitsRead++;
 		if (encode == 1) {
 			encode <<= 1;
-			encode |= this.reader.next();
+			encode |= this.reader.next(); bitsRead++;
 			return encode;
 		}
 		return 1;
@@ -181,33 +232,50 @@ public class DecompressTask implements Runnable {
 	 * @throws IOException passed on from {@link BitReader#next()}
 	 */
 	private byte[] RLE(int currentIndex, final int spriteSize) throws IOException {
-		System.out.print("RLE  ");
+		StringBuilder diags = new StringBuilder();
 
-		int valueL = 0; // initialize value L to 0
-		int bits = 0; // counter for amount of bits
+		try {
+			diags.append("RLE : L=");
 
-		byte next;
-		do {
-			next = this.reader.next();
+			int valueL = 0; // initialize value L to 0
+			int bits = 0; // counter for amount of bits
 
-			valueL = (valueL << 1) | next; // modify value L
+			byte next;
+			do {
+				next = this.reader.next();
+				bitsRead++;
+				diags.append(next);
 
-			bits++;
-		} while (next != 0);
+				valueL = (valueL << 1) | (next & 0xFF); // modify value L
+				bits++;
+			} while (next != 0);
+			diags.append(" (");
+			diags.append(bits);
+			diags.append(" bits), V=");
 
-		int valueV = 0;
-		for (int i = 0; i < bits; i++) {
-			valueV <<= 1;
-			valueV |= this.reader.next();
+			int valueV = 0;
+			for (int i = 0; i < bits; i++) {
+				valueV <<= 1;
+				next = this.reader.next(); bitsRead++;
+				diags.append(next);
+				valueV |= next;
+			}
+			diags.append(" (" + bits + " bits). N=" + valueL + " + " + valueV + " + 1 = ");
+			// set value N
+			int valueN = valueL + valueV + 1;
+			diags.append(valueN + " zero-zero pairs to write. Size of buffer returned: ");
+
+			byte[] bytes = new byte[valueN]; // make byte[]
+			Arrays.fill(bytes, (byte) 0); // fill array with 0b00
+
+			diags.append(bytes.length);
+			println(diags.toString());
+			return bytes;
+		} catch (Exception e) {
+			println("ERROR: %s", e.getMessage());
+			println(diags.toString());
+			throw e;
 		}
-
-		// set value N
-		int valueN = valueL + valueV + 1;
-
-		byte[] bytes = new byte[valueN]; // make byte[]
-		Arrays.fill(bytes, (byte) 0); // fill array with 0b00
-
-		return bytes;
 	}
 
 	/**
@@ -224,27 +292,43 @@ public class DecompressTask implements Runnable {
 	 * @throws IOException passed on from {@link BitReader#next(int)}
 	 */
 	private byte[] DATA(int currentIndex, final int spriteSize) throws IOException {
-		System.out.print("DATA  ");
+		StringBuilder diags = new StringBuilder();
 
-		List<Byte> bitpairs = new ArrayList<>(); // need a variable size, as length is unknown
-		while (currentIndex + (bitpairs.size() * 2) < spriteSize) {
-			byte next;
-			try {
-				next = this.reader.next(2); // DATA packet parts are pairs
-			} catch (EOFException e) {
-				break;
-			}
-			if (next == 0) {
-				break;
-			}
-			bitpairs.add(next); // add if not 0b00
-		}
+		try {
+			diags.append("DATA: ");
 
-		byte[] bytes = new byte[bitpairs.size()]; // put data into array
-		for (int i = 0; i < bytes.length; i++) { // Byte[] cannot be cast to byte[]
-			bytes[i] = bitpairs.get(i);
+			List<Byte> bitpairs = new ArrayList<>(); // need a variable size, as length is unknown
+			while (currentIndex + (bitpairs.size() * 2) < spriteSize) {
+				byte next;
+				try {
+					next = this.reader.next(2);
+					bitsRead += 2; // DATA packet parts are pairs
+					diags.append(next >> 1);
+					diags.append(next & 1);
+					diags.append(" ");
+				} catch (EOFException e) {
+					break;
+				}
+				if (next == 0) {
+					break;
+				}
+				bitpairs.add(next); // add if not 0b00
+			}
+
+			byte[] bytes = new byte[bitpairs.size()]; // put data into array
+			for (int i = 0; i < bytes.length; i++) { // Byte[] cannot be cast to byte[]
+				bytes[i] = bitpairs.get(i);
+			}
+			diags.append("-> Buffer size returned = ");
+			diags.append(bytes.length);
+
+			println(diags.toString());
+			return bytes;
+		} catch (Exception e) {
+			println("ERROR: %s", e.getMessage());
+			println(diags.toString());
+			throw e;
 		}
-		return bytes;
 	}
 
 	/**
@@ -297,5 +381,14 @@ public class DecompressTask implements Runnable {
 		});
 
 		return xorSprite;
+	}
+
+	private void print(String fmt, Object ... items) {
+		String leader = String.format("[%6d / %6d] [reader: byte %d, idx %d] ", bitsRead, fileSizeBits, reader.currentByte, reader.bitIndex);
+		System.out.printf(leader + fmt, items);
+	}
+
+	private void println(String fmt, Object ... items) {
+		print(fmt + "%n", items);
 	}
 }

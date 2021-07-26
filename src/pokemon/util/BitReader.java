@@ -4,9 +4,10 @@ import java.io.*;
 
 public class BitReader implements Closeable {
 	private static final String EOF_EXCEPTION_MESSAGE = "end of file is reached";
-	private final InputStream input;
-	private byte currentByte;
-	private byte pointerIndex;
+
+	final InputStream input;
+	byte currentByte;
+	byte pointerIndex;
 
 	public BitReader(byte[] bytes) {
 		this(new ByteArrayInputStream(bytes));
@@ -85,7 +86,7 @@ public class BitReader implements Closeable {
 	}
 
 	private void atEndOfFile() throws IOException {
-		if (this.input.available() <= 0) {
+		if (this.input.available() < 0) {
 			throw new EOFException(EOF_EXCEPTION_MESSAGE);
 		}
 	}
