@@ -49,9 +49,14 @@ public class DecompressTask implements Runnable {
 				this.render(buffer1SpriteData, bufferB);
 			}
 
+			System.out.println("Buffer 0:");
 			System.out.println(buffer0SpriteData);
+
+			System.out.println();
+			System.out.println("Buffer 1:");
 			System.out.println(buffer1SpriteData);
-//			System.out.println("encodeMethod = " + encodeMethod);
+
+			// System.out.println("encodeMethod = " + encodeMethod);
 
 			switch (encodeMethod) {
 				case 1: {
@@ -124,7 +129,7 @@ public class DecompressTask implements Runnable {
 		int x = 0;
 		int y = 0;
 
-		while (bitsRead <= bitsInSprite) {
+		while (bitsRead < bitsInSprite) {
 			byte[] bitPairs;
 
 			try {
@@ -135,11 +140,11 @@ public class DecompressTask implements Runnable {
 			}
 
 			for (byte bitPair : bitPairs) {
-				sprite.setAbsolute(x, y, (byte) (bitPair & 1));
-				sprite.setAbsolute(x + 1, y, (byte) ((bitPair >> 1) & 1));
+				sprite.setAbsolute(x, y, (byte) ((bitPair >> 1) & 1));
+				sprite.setAbsolute(x + 1, y, (byte) (bitPair & 1));
 				bitsRead += 2;
 				y++;
-				if (y > sprite.getAbsoluteHeight()) {
+				if (y >= sprite.getAbsoluteHeight()) {
 					y = 0;
 					x += 2;
 				}

@@ -82,7 +82,31 @@ public class Sprite {
 
 	@Override
 	public String toString() {
-		return new StringJoiner(", ", Sprite.class.getSimpleName() + "[", "]")
-				.add("tiles=" + Arrays.toString(tiles)).toString();
+		StringBuilder sb = new StringBuilder();
+
+		sb.append(String.format("Width: %d (%d pix), Height: %d (%d pix)\n", getWidth(), getAbsoluteWidth(), getHeight(), getAbsoluteHeight()));
+
+		int row = 1;
+		int col = 0;
+
+		for (int tileY = 0; tileY < getHeight(); tileY++) {
+			for (int pixY = 0; pixY < 8; pixY++) {
+				sb.append(String.format("row %2d: ", row));
+				col = 0;
+
+				for (int tileX = 0; tileX < getWidth(); tileX++) {
+					Tile tile = get(tileX, tileY);
+					for (int pixX = 0; pixX < 8; pixX++) {
+						sb.append(tile.get(pixX, pixY) == 1 ? "##" : "..");
+						col++;
+					}
+				}
+				sb.append(String.format(" - cols = %d", col));
+				sb.append("\n");
+
+				row++;
+			}
+		}
+		return sb.toString();
 	}
 }
