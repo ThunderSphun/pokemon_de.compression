@@ -25,10 +25,16 @@ public class DecompressTask implements Runnable {
 		this.renderable = renderable;
 	}
 
+	public DecompressTask(File file) {
+		this.file = file;
+		this.renderable = false;
+	}
+
 	@Override
 	public void run() {
 		try {
 			this.reader = new BitReader(this.file);
+			System.out.println(this.file.getName());
 
 			int sizeOfSprite = this.getSpriteSize();
 			byte primaryBuffer = this.reader.next();
@@ -36,11 +42,10 @@ public class DecompressTask implements Runnable {
 			Sprite buffer0SpriteData = new Sprite(this.widthInTiles, this.heightInTiles);
 			Sprite buffer1SpriteData = new Sprite(this.widthInTiles, this.heightInTiles);
 
-			System.out.println(sizeOfSprite);
 			this.readToBuffer(primaryBuffer == 0 ? buffer0SpriteData : buffer1SpriteData);
 			byte encodeMethod = getEncodeMethod();
-			System.out.println(encodeMethod);
-			this.readToBuffer(primaryBuffer == 1 ? buffer1SpriteData : buffer0SpriteData);
+			this.readToBuffer(primaryBuffer == 0 ? buffer1SpriteData : buffer0SpriteData);
+
 			if (this.renderable) {
 				WritableImageWrapper bufferA = Renderer.Instance().getBuffer(0);
 				WritableImageWrapper bufferB = Renderer.Instance().getBuffer(1);
@@ -49,42 +54,43 @@ public class DecompressTask implements Runnable {
 				this.render(buffer1SpriteData, bufferB);
 			}
 
-			System.out.println(buffer0SpriteData);
-			System.out.println(buffer1SpriteData);
-//			System.out.println("encodeMethod = " + encodeMethod);
+			System.out.println("mode " + encodeMethod);
 
 			switch (encodeMethod) {
 				case 1: {
-//					System.out.println("mode 1");
 					this.deltaEncode(buffer0SpriteData);
 					this.deltaEncode(buffer1SpriteData);
 					break;
 				}
 				case 2: {
-//					System.out.println("mode 2");
-					buffer1SpriteData = this.xorList(buffer0SpriteData, buffer1SpriteData);
+					buffer1SpriteData = this.xorData(buffer0SpriteData, buffer1SpriteData);
 					this.deltaEncode(buffer0SpriteData);
 					break;
 				}
 				case 3: {
-//					System.out.println("mode 3");
-					buffer1SpriteData = this.xorList(buffer0SpriteData, buffer1SpriteData);
+					buffer1SpriteData = this.xorData(buffer0SpriteData, buffer1SpriteData);
 					this.deltaEncode(buffer0SpriteData);
 					this.deltaEncode(buffer1SpriteData);
 					break;
 				}
 			}
 
-			System.out.println(buffer0SpriteData);
-			System.out.println(buffer1SpriteData);
+			if (this.renderable) {
+				WritableImageWrapper bufferA = Renderer.Instance().getBuffer(0);
+				WritableImageWrapper bufferB = Renderer.Instance().getBuffer(1);
 
-//			if (this.renderable) {
-//				WritableImageWrapper bufferA = Renderer.Instance().getBuffer(0);
-//				WritableImageWrapper bufferB = Renderer.Instance().getBuffer(1);
-//
-//				this.render(buffer0SpriteData, bufferA);
-//				this.render(buffer1SpriteData, bufferB);
-//			}
+				this.render(buffer0SpriteData, bufferA);
+				this.render(buffer1SpriteData, bufferB);
+			}
+
+
+			Sprite mainSprite = new Sprite(this.widthInTiles, this.heightInTiles);
+
+			int verticalOffset = Sprite.WIDTH - this.heightInTiles;
+			int horizontalOffset = Math.round((Sprite.WIDTH - this.widthInTiles) / 2f);
+
+
+
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -93,7 +99,13 @@ public class DecompressTask implements Runnable {
 	private void render(Sprite data, WritableImageWrapper buffer) {
 		buffer.announceBatchStart();
 
-		data.forEachAbsolute((x, y, b) -> buffer.set(x, y, b == 0 ? Color.WHITE : Color.BLACK));
+		data.forEachAbsolute((x, y, b) -> {
+			if (b == 0) {
+				buffer.set(x, y, Color.WHITE);
+			} else {
+				buffer.set(x, y, Color.BLACK);
+			}
+		});
 
 		buffer.announceBatchEnd();
 	}
@@ -123,23 +135,24 @@ public class DecompressTask implements Runnable {
 		int bitsRead = 0;
 		int x = 0;
 		int y = 0;
+		System.out.println(sprite.getAbsoluteHeight());
 
-		while (bitsRead <= bitsInSprite) {
+		while (bitsRead < bitsInSprite) {
 			byte[] bitPairs;
 
 			try {
-				bitPairs = doingRLE ? RLE(bitsRead, bitsInSprite) : DATA(bitsRead, bitsInSprite);
+				bitPairs = doingRLE ? RLE() : DATA(bitsRead, bitsInSprite);
 			} catch (EOFException e) {
 				System.out.println(bitsRead);
 				break;
 			}
 
 			for (byte bitPair : bitPairs) {
-				sprite.setAbsolute(x, y, (byte) (bitPair & 1));
-				sprite.setAbsolute(x + 1, y, (byte) ((bitPair >> 1) & 1));
+				sprite.setAbsolute(x + 1, y, (byte) (bitPair & 1));
+				sprite.setAbsolute(x, y, (byte) ((bitPair >> 1) & 1));
 				bitsRead += 2;
 				y++;
-				if (y > sprite.getAbsoluteHeight()) {
+				if (y >= sprite.getAbsoluteHeight()) {
 					y = 0;
 					x += 2;
 				}
@@ -148,9 +161,9 @@ public class DecompressTask implements Runnable {
 			doingRLE = !doingRLE;
 		}
 		System.out.println();
-		System.out.println(bitsRead);
-		System.out.println(bitsInSprite);
-		System.out.println(sprite);
+//		System.out.println(bitsRead);
+//		System.out.println(bitsInSprite);
+//		System.out.println(sprite);
 	}
 
 	private byte getEncodeMethod() throws IOException {
@@ -180,7 +193,7 @@ public class DecompressTask implements Runnable {
 	 * @return byte[] with RLE packet
 	 * @throws IOException passed on from {@link BitReader#next()}
 	 */
-	private byte[] RLE(int currentIndex, final int spriteSize) throws IOException {
+	private byte[] RLE() throws IOException {
 		System.out.print("RLE  ");
 
 		int valueL = 0; // initialize value L to 0
@@ -226,8 +239,8 @@ public class DecompressTask implements Runnable {
 	private byte[] DATA(int currentIndex, final int spriteSize) throws IOException {
 		System.out.print("DATA  ");
 
-		List<Byte> bitpairs = new ArrayList<>(); // need a variable size, as length is unknown
-		while (currentIndex + (bitpairs.size() * 2) < spriteSize) {
+		List<Byte> bitPairs = new ArrayList<>(); // need a variable size, as length is unknown
+		while (currentIndex + (bitPairs.size() * 2) < spriteSize) {
 			byte next;
 			try {
 				next = this.reader.next(2); // DATA packet parts are pairs
@@ -237,12 +250,12 @@ public class DecompressTask implements Runnable {
 			if (next == 0) {
 				break;
 			}
-			bitpairs.add(next); // add if not 0b00
+			bitPairs.add(next); // add if not 0b00
 		}
 
-		byte[] bytes = new byte[bitpairs.size()]; // put data into array
+		byte[] bytes = new byte[bitPairs.size()]; // put data into array
 		for (int i = 0; i < bytes.length; i++) { // Byte[] cannot be cast to byte[]
-			bytes[i] = bitpairs.get(i);
+			bytes[i] = bitPairs.get(i);
 		}
 		return bytes;
 	}
@@ -271,7 +284,7 @@ public class DecompressTask implements Runnable {
 	}
 
 	/**
-	 * XORs two lists together
+	 * XORs two sprites together
 	 * <p>
 	 * XOR is a binary operation with truth table:
 	 * <p>
@@ -288,7 +301,7 @@ public class DecompressTask implements Runnable {
 	 * @param spriteB sprite with values B
 	 * @return sprite with values A ^ B
 	 */
-	private Sprite xorList(Sprite spriteA, Sprite spriteB) {
+	private Sprite xorData(Sprite spriteA, Sprite spriteB) {
 		Sprite xorSprite = new Sprite(spriteA.getWidth(), spriteA.getHeight());
 
 		spriteA.forEachAbsolute((x, y, a) -> {

@@ -38,7 +38,7 @@ public class BitReader implements Closeable {
 		if (amount > 8 || amount <= 0) {
 			throw new IllegalArgumentException("you can only ask 1-8 bytes at once, but you asked " + amount);
 		}
-		if (this.input.available() < amount) {
+		if (this.input.available() < amount && this.pointerIndex < 0) {
 			this.atEndOfFile();
 			return this.next(this.input.available());
 		}
@@ -56,14 +56,14 @@ public class BitReader implements Closeable {
 
 	public byte[] nextBatch(int amount) throws IOException {
 		if (amount <= 8) {
-			return new byte[]{next(amount)};
+			return new byte[]{this.next(amount)};
 		}
-		if (this.input.available() < amount) {
+		if (this.input.available() < amount && this.pointerIndex < 0) {
 			this.atEndOfFile();
 			return this.nextBatch(this.input.available());
 		}
 
-		byte[] bytes = new byte[(amount / 8)];
+		byte[] bytes = new byte[(int) Math.ceil(amount / 8f)];
 		for (int i = 0; i < bytes.length; i++) {
 			if (amount > 8) {
 				bytes[i] = next(8);
@@ -85,7 +85,7 @@ public class BitReader implements Closeable {
 	}
 
 	private void atEndOfFile() throws IOException {
-		if (this.input.available() <= 0) {
+		if (this.input.available() < 0) {
 			throw new EOFException(EOF_EXCEPTION_MESSAGE);
 		}
 	}

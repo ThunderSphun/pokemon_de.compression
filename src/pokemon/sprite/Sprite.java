@@ -4,12 +4,13 @@ import java.util.Arrays;
 import java.util.StringJoiner;
 
 public class Sprite {
+	public static final int WIDTH = 7;
 	private final Tile[] tiles;
 	private final int width;
 	private final int height;
 
 	public Sprite(int width, int height) {
-		this.tiles = new Tile[7 * 7];
+		this.tiles = new Tile[WIDTH * WIDTH];
 		this.width = width;
 		this.height = height;
 
@@ -17,7 +18,7 @@ public class Sprite {
 	}
 
 	public Sprite() {
-		this(7, 7);
+		this(WIDTH, WIDTH);
 	}
 
 	protected int index(int x, int y) {

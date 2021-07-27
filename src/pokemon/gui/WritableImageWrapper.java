@@ -50,7 +50,7 @@ public class WritableImageWrapper {
 			}
 		}
 
-		ImageView imageView = new ImageView(this.image);
+		ImageView imageView = new ImageView(nodeImage);
 
 		Platform.runLater(() -> {
 			this.node.getChildren().clear();

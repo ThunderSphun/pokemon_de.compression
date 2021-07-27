@@ -19,12 +19,12 @@ import java.util.List;
 public class Gui extends Application {
 	public static void main(String[] args) throws InterruptedException {
 		new Thread(() -> Application.launch(Gui.class)).start();
-		Thread.sleep(1000);
-		List<File> files = new ArrayList<>();
-		files.add(Main.getCompressed("vaporeon"));
-		Thread fileHandlerThread = new Thread(new DecompressTask(files, true), "file loading");
-		fileHandlerThread.setDaemon(true);
-		fileHandlerThread.start();
+//		Thread.sleep(1000);
+//		List<File> files = new ArrayList<>();
+//		files.add(Main.getCompressed("vaporeon"));
+//		Thread fileHandlerThread = new Thread(new DecompressTask(files, true), "file loading");
+//		fileHandlerThread.setDaemon(true);
+//		fileHandlerThread.start();
 	}
 
 	private BorderPane mainPane;
