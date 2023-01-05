@@ -10,15 +10,14 @@ import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 
 public class WritableImageWrapper {
-	private final int width;
-	private final int height;
 	private final Pane node;
+	private int width;
+	private int height;
 	private int pixelWidth;
 	private int pixelHeight;
-	private PixelWriter writer;
-	private WritableImage image;
-	private boolean batch;
 	private PixelReader reader;
+	private PixelWriter writer;
+	private boolean batch;
 
 	public WritableImageWrapper(int width, int height, int widthInPixels, int heightInPixels) {
 		this.width = width;
@@ -65,11 +64,18 @@ public class WritableImageWrapper {
 		this.pixelWidth = widthInPixels;
 		this.pixelHeight = heightInPixels;
 
-		this.image = new WritableImage(this.pixelWidth, this.pixelHeight);
-		this.writer = this.image.getPixelWriter();
-		this.reader = this.image.getPixelReader();
+		WritableImage image = new WritableImage(this.pixelWidth, this.pixelHeight);
+		this.writer = image.getPixelWriter();
+		this.reader = image.getPixelReader();
 
 		this.updateNode();
+	}
+
+	public void setSize(int width, int height, int widthInPixels, int heightInPixels) {
+		this.width = width;
+		this.height = height;
+
+		this.setSize(widthInPixels, heightInPixels);
 	}
 
 	public void set(int x, int y, Color color) {

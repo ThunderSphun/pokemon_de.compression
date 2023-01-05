@@ -1,10 +1,6 @@
-package pokemon;
+package optimized;
 
-import javafx.scene.paint.Color;
-import pokemon.gui.Renderer;
-import pokemon.gui.WritableImageWrapper;
 import pokemon.sprite.Sprite;
-import pokemon.util.BitReader;
 
 import java.io.EOFException;
 import java.io.File;
@@ -14,54 +10,22 @@ import java.util.Arrays;
 import java.util.List;
 
 public class DecompressTask implements Runnable {
-	private static final List<Color> COLOR_PALETTE = List.of(Color.gray(1), Color.gray(2 / 3f), Color.gray(1 / 3f), Color.gray(0));
 	private final File file;
-	private final boolean renderable;
 	private BitReader reader;
 	private byte widthInTiles;
 	private byte heightInTiles;
 
-	public DecompressTask(List<File> files, boolean renderable) {
-		this.file = files.get(0);
-		this.renderable = renderable;
-	}
-
 	public DecompressTask(File file) {
 		this.file = file;
-		this.renderable = false;
 	}
 
 	@Override
 	public void run() {
 		try {
 			this.reader = new BitReader(this.file);
-			System.out.println(this.file.getName());
 
 			int sizeOfSprite = this.getSpriteSize();
 			byte primaryBuffer = this.reader.next();
-
-			if (this.renderable) {
-				Sprite sprite = new Sprite(this.widthInTiles, this.heightInTiles);
-				BitReader reader = new BitReader(this.file);
-				try {
-					for (int i = 0; i < sprite.getAbsoluteWidth() * sprite.getAbsoluteHeight(); i++) {
-						int x = i % sprite.getAbsoluteHeight();
-						int y = i / sprite.getAbsoluteHeight();
-						byte n = reader.next(2);
-
-						sprite.setAbsolute(x, y, n);
-					}
-				} catch (EOFException eof) {
-					System.out.println("done with raw data");
-					// used to detect end of bitReader
-				}
-
-				WritableImageWrapper image = Renderer.Instance().getImage(1);
-
-				this.render(sprite, image);
-			}
-
-			System.out.println("primary buffer: " + primaryBuffer);
 
 			Sprite buffer0SpriteData = new Sprite(this.widthInTiles, this.heightInTiles);
 			Sprite buffer1SpriteData = new Sprite(this.widthInTiles, this.heightInTiles);
@@ -69,16 +33,6 @@ public class DecompressTask implements Runnable {
 			this.readToBuffer(buffer0SpriteData);
 			byte encodeMethod = getEncodeMethod();
 			this.readToBuffer(buffer1SpriteData);
-
-			if (this.renderable) {
-				WritableImageWrapper bufferA = Renderer.Instance().getBuffer(4);
-				WritableImageWrapper bufferB = Renderer.Instance().getBuffer(5);
-
-				this.render(buffer0SpriteData, bufferA);
-				this.render(buffer1SpriteData, bufferB);
-			}
-
-			System.out.println("mode " + encodeMethod);
 
 			switch (encodeMethod) {
 				case 1:
@@ -93,28 +47,12 @@ public class DecompressTask implements Runnable {
 				}
 			}
 
-			if (this.renderable) {
-				WritableImageWrapper bufferA = Renderer.Instance().getBuffer(2);
-				WritableImageWrapper bufferB = Renderer.Instance().getBuffer(3);
-
-				this.render(buffer0SpriteData, bufferA);
-				this.render(buffer1SpriteData, bufferB);
-			}
-
 			switch (encodeMethod) {
 				case 1:
 					break;
 				case 2:
 				case 3:
 					buffer1SpriteData = this.xorData(buffer0SpriteData, buffer1SpriteData);
-			}
-
-			if (this.renderable) {
-				WritableImageWrapper bufferA = Renderer.Instance().getBuffer(0);
-				WritableImageWrapper bufferB = Renderer.Instance().getBuffer(1);
-
-				this.render(buffer0SpriteData, bufferA);
-				this.render(buffer1SpriteData, bufferB);
 			}
 
 			if (primaryBuffer == 1) {
@@ -138,23 +76,9 @@ public class DecompressTask implements Runnable {
 				mainSprite.setAbsolute(x, y, (byte) colorIndex);
 			}
 
-			if (this.renderable) {
-				WritableImageWrapper image = Renderer.Instance().getImage(0);
-
-				this.render(mainSprite, image);
-			}
-
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-	}
-
-	private void render(Sprite data, WritableImageWrapper buffer) {
-		buffer.announceBatchStart();
-
-		data.forEachAbsolute((x, y, b) -> buffer.set(x, y, COLOR_PALETTE.get(b)));
-
-		buffer.announceBatchEnd();
 	}
 
 	private int getSpriteSize() throws IOException {
@@ -163,10 +87,6 @@ public class DecompressTask implements Runnable {
 
 		int spriteWidth = this.widthInTiles * 8;
 		int spriteHeight = this.heightInTiles * 8;
-
-		if (this.renderable) {
-			Renderer.Instance().setSize(spriteWidth, spriteHeight);
-		}
 
 		return spriteWidth * spriteHeight;
 	}
@@ -187,8 +107,6 @@ public class DecompressTask implements Runnable {
 			try {
 				bitPairs = doingRLE ? RLE() : DATA(bitsRead, bitsInSprite);
 			} catch (EOFException e) {
-				System.out.println();
-				System.out.print("bits read: " + bitsRead);
 				break;
 			}
 
@@ -205,7 +123,6 @@ public class DecompressTask implements Runnable {
 
 			doingRLE = !doingRLE;
 		}
-		System.out.println();
 	}
 
 	private byte getEncodeMethod() throws IOException {
@@ -236,8 +153,6 @@ public class DecompressTask implements Runnable {
 	 * @throws IOException passed on from {@link BitReader#next()}
 	 */
 	private byte[] RLE() throws IOException {
-		System.out.print("RLE  ");
-
 		int valueL = 0; // initialize value L to 0
 		int bits = 0; // counter for amount of bits
 
@@ -279,8 +194,6 @@ public class DecompressTask implements Runnable {
 	 * @throws IOException passed on from {@link BitReader#next(int)}
 	 */
 	private byte[] DATA(int currentIndex, final int spriteSize) throws IOException {
-		System.out.print("DATA  ");
-
 		List<Byte> bitPairs = new ArrayList<>(); // need a variable size, as length is unknown
 		while (currentIndex + (bitPairs.size() * 2) < spriteSize) {
 			byte next;

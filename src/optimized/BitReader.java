@@ -1,4 +1,4 @@
-package pokemon.util;
+package optimized;
 
 import java.io.*;
 
@@ -11,8 +11,8 @@ public class BitReader implements Closeable {
 		this(new ByteArrayInputStream(bytes));
 	}
 
-	public BitReader(File file) throws FileNotFoundException {
-		this(new FileInputStream(file));
+	public BitReader(File file) throws IOException {
+		this(new ByteArrayInputStream(new FileInputStream(file).readAllBytes()));
 	}
 
 	private BitReader(InputStream input) {

@@ -35,7 +35,8 @@ public class Sprite {
 
 	public byte getAbsolute(int x, int y) {
 		Tile tile = this.get(x / Tile.SIZE, y / Tile.SIZE);
-		return tile.get(x % Tile.SIZE, y % Tile.SIZE);
+		byte b = tile.get(x % Tile.SIZE, y % Tile.SIZE);
+		return b;
 	}
 
 	public void setAbsolute(int x, int y, byte color) {
